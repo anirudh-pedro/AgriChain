@@ -129,6 +129,12 @@ const typeDefs = gql`
 
     # Admin queries
     users(limit: Int = 10, offset: Int = 0): [User!]! # Admin only
+
+    # === Fabric Blockchain Queries ===
+    blockchainData(id: String!): BlockchainData
+    allBlockchainData: [BlockchainQueryResult!]!
+    blockchainDataByType(type: String!): [BlockchainQueryResult!]!
+    blockchainDataHistory(id: String!): [BlockchainData!]! # Admin/Auditor only
   }
 
   # Mutations
@@ -144,6 +150,51 @@ const typeDefs = gql`
     # Admin mutations
     updateUserRole(userId: ID!, role: UserRole!): User! # Admin only
     deleteUser(userId: ID!): Boolean! # Admin only
+
+    # === Fabric Blockchain Mutations ===
+    createBlockchainData(input: BlockchainDataInput!): BlockchainResult!
+    verifyBlockchainData(dataId: String!): BlockchainResult!
+  }
+
+  # === Blockchain Types ===
+  
+  type BlockchainResult {
+    id: String!
+    success: Boolean!
+    blockchainTxId: String
+    message: String!
+    data: BlockchainData
+  }
+
+  type BlockchainData {
+    id: String!
+    type: String!
+    timestamp: String!
+    verified: Boolean!
+    createdBy: String
+    verifiedBy: String
+    verifiedAt: String
+  }
+
+  type BlockchainQueryResult {
+    Key: String!
+    Record: BlockchainData!
+  }
+
+  input BlockchainDataInput {
+    type: String!
+    farmerId: String
+    cropType: String
+    quantity: String
+    unit: String
+    location: String
+    quality: String
+    processType: String
+    sourceDataId: String
+    inputQuantity: String
+    outputQuantity: String
+    outputProduct: String
+    customData: String # JSON string for flexible data
   }
 
   # File upload scalar

@@ -3,11 +3,15 @@ const Transaction = require('../models/Transaction');
 const BatchUpload = require('../models/BatchUpload');
 const authService = require('../middleware/auth');
 const blockchainService = require('../services/blockchain');
+const FabricService = require('../services/fabricService');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
 const csv = require('csv-parser');
 const { createReadStream } = require('fs');
+
+// Initialize Fabric service
+const fabricService = new FabricService();
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -165,6 +169,109 @@ const resolvers = {
         .sort({ createdAt: -1 })
         .limit(limit)
         .skip(offset);
+    },
+
+    // === Fabric Blockchain Queries ===
+    
+    // Query blockchain data by ID
+    blockchainData: async (parent, { id }, { user }) => {
+      authService.requireAuth(user);
+
+      try {
+        if (!fabricService.isConnected) {
+          await fabricService.connect();
+        }
+
+        const result = await fabricService.queryData(id);
+        return result;
+
+      } catch (error) {
+        console.error('Blockchain query error:', error);
+        
+        // Fallback to MongoDB
+        const transaction = await Transaction.findOne({ transactionId: id });
+        if (transaction) {
+          return transaction.data;
+        }
+        
+        throw new Error(`Data not found: ${error.message}`);
+      }
+    },
+
+    // Query all blockchain data
+    allBlockchainData: async (parent, args, { user }) => {
+      authService.requireAuth(user);
+
+      try {
+        if (!fabricService.isConnected) {
+          await fabricService.connect();
+        }
+
+        const result = await fabricService.queryAllData();
+        return result;
+
+      } catch (error) {
+        console.error('Blockchain query all error:', error);
+        
+        // Fallback to MongoDB
+        const transactions = await Transaction.find({ status: 'committed' })
+          .populate('userId', 'username email')
+          .sort({ createdAt: -1 })
+          .limit(50);
+        
+        return transactions.map(t => ({
+          Key: t.transactionId,
+          Record: t.data
+        }));
+      }
+    },
+
+    // Query blockchain data by type
+    blockchainDataByType: async (parent, { type }, { user }) => {
+      authService.requireAuth(user);
+
+      try {
+        if (!fabricService.isConnected) {
+          await fabricService.connect();
+        }
+
+        const result = await fabricService.queryDataByType(type);
+        return result;
+
+      } catch (error) {
+        console.error('Blockchain query by type error:', error);
+        
+        // Fallback to MongoDB
+        const transactions = await Transaction.find({ 
+          type: type,
+          status: 'committed' 
+        })
+        .populate('userId', 'username email')
+        .sort({ createdAt: -1 });
+        
+        return transactions.map(t => ({
+          Key: t.transactionId,
+          Record: t.data
+        }));
+      }
+    },
+
+    // Get data history from blockchain
+    blockchainDataHistory: async (parent, { id }, { user }) => {
+      authService.requireRole(user, ['admin', 'auditor']);
+
+      try {
+        if (!fabricService.isConnected) {
+          await fabricService.connect();
+        }
+
+        const result = await fabricService.getDataHistory(id);
+        return result;
+
+      } catch (error) {
+        console.error('Blockchain history error:', error);
+        throw new Error(`History not available: ${error.message}`);
+      }
     }
   },
 
@@ -297,6 +404,121 @@ const resolvers = {
 
       const deletedUser = await User.findByIdAndDelete(userId);
       return !!deletedUser;
+    },
+
+    // === Fabric Blockchain Operations ===
+    
+    // Create blockchain data entry
+    createBlockchainData: async (parent, { input }, { user }) => {
+      authService.requireAuth(user);
+
+      try {
+        // Connect to Fabric if not already connected
+        if (!fabricService.isConnected) {
+          await fabricService.connect();
+        }
+
+        // Create unique ID
+        const id = `DATA_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Add user context to data
+        const dataWithContext = {
+          ...input,
+          createdBy: user.id,
+          createdByEmail: user.email,
+          organizationId: user.organizationId || 'ORG001'
+        };
+
+        // Submit to blockchain
+        const blockchainResult = await fabricService.createData(id, input.type, dataWithContext);
+        
+        // Also save to MongoDB for faster queries
+        const transaction = new Transaction({
+          transactionId: id,
+          type: input.type,
+          data: dataWithContext,
+          userId: user.id,
+          blockchainTxId: blockchainResult.id || id,
+          status: 'committed',
+          metadata: {
+            fabricTimestamp: blockchainResult.timestamp,
+            verified: blockchainResult.verified || false
+          }
+        });
+
+        await transaction.save();
+
+        return {
+          id: id,
+          success: true,
+          blockchainTxId: id,
+          message: 'Data successfully recorded on blockchain',
+          data: blockchainResult
+        };
+
+      } catch (error) {
+        console.error('Blockchain data creation error:', error);
+        
+        // Fallback to MongoDB only if blockchain fails
+        const transaction = new Transaction({
+          transactionId: `OFFLINE_${Date.now()}`,
+          type: input.type,
+          data: input,
+          userId: user.id,
+          status: 'pending_blockchain',
+          metadata: {
+            error: error.message,
+            fallbackMode: true
+          }
+        });
+
+        await transaction.save();
+
+        return {
+          id: transaction.transactionId,
+          success: false,
+          message: `Blockchain unavailable. Data saved locally: ${error.message}`,
+          data: transaction
+        };
+      }
+    },
+
+    // Verify blockchain data (Admin/Auditor only)
+    verifyBlockchainData: async (parent, { dataId }, { user }) => {
+      authService.requireRole(user, ['admin', 'auditor']);
+
+      try {
+        if (!fabricService.isConnected) {
+          await fabricService.connect();
+        }
+
+        const result = await fabricService.verifyData(dataId);
+        
+        // Update MongoDB record
+        await Transaction.findOneAndUpdate(
+          { transactionId: dataId },
+          { 
+            'metadata.verified': true,
+            'metadata.verifiedBy': user.id,
+            'metadata.verifiedAt': new Date()
+          }
+        );
+
+        return {
+          id: dataId,
+          success: true,
+          message: 'Data successfully verified on blockchain',
+          data: result
+        };
+
+      } catch (error) {
+        console.error('Blockchain verification error:', error);
+        return {
+          id: dataId,
+          success: false,
+          message: `Verification failed: ${error.message}`
+        };
+      }
     }
   }
 };

@@ -1,0 +1,23 @@
+{
+  "name": "agrichain-chaincode",
+  "version": "1.0.0",
+  "description": "AgriChain Smart Contract for transparent data management",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "hyperledger",
+    "fabric",
+    "chaincode",
+    "agriculture",
+    "blockchain"
+  ],
+  "author": "AgriChain Team",
+  "license": "MIT",
+  "dependencies": {
+    "fabric-contract-api": "^2.5.0",
+    "fabric-shim": "^2.5.0"
+  }
+}
