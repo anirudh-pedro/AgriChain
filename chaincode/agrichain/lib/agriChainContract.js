@@ -1,14 +1,9 @@
-'use strict';'use strict';
+'use strict';
 
+const { Contract } = require('fabric-contract-api');
 
-
-const agriChainContract = require('./lib/agriChainContract');const { Contract } = require('fabric-contract-api');
-
-
-
-module.exports.AgriChainContract = agriChainContract;/**
-
-module.exports.contracts = [agriChainContract]; * AgriChain Smart Contract
+/**
+ * AgriChain Smart Contract
  * Manages transparent agricultural data on the blockchain
  */
 class AgriChainContract extends Contract {
