@@ -1,15 +1,29 @@
 import React, { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Database, Eye, EyeOff, LogIn } from 'lucide-react';
 
 const LoginPage = () => {
-  const { isAuthenticated, login, setLoading, setError, error, loading } = useAuth();
+  const { isAuthenticated, login, error, loading, clearError, getDemoCredentials } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
   });
-  const [showPassword, setShowPassword] = useState(false);
+  const [showDemoAccounts, setShowDemoAccounts] = useState(false);
+
+  // Get demo credentials for testing
+  const demoCredentials = getDemoCredentials();
+
+  // Show loading spinner while auth is being checked
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-green-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Redirect if already authenticated
   if (isAuthenticated) {
@@ -21,67 +35,84 @@ const LoginPage = () => {
       ...formData,
       [e.target.name]: e.target.value
     });
+    if (error && clearError) {
+      clearError();
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-
     try {
-      // Temporary: Use fetch API instead of GraphQL mutation
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        login(data.token, data.user);
-      } else {
-        const errorData = await response.json();
-        setError(errorData.message || 'Login failed');
-      }
+      await login(formData.email, formData.password);
     } catch (err) {
-      setError('Network error: Unable to connect to server');
-      console.log('Login will be implemented once database is connected');
-      
-      // Temporary: Mock successful login for demo
-      const mockUser = {
-        id: '1',
-        username: formData.email.split('@')[0],
-        email: formData.email,
-        role: 'USER'
-      };
-      const mockToken = 'mock-jwt-token-' + Date.now();
-      login(mockToken, mockUser);
-    } finally {
-      setLoading(false);
+      // Error is handled by the login function
+    }
+  };
+
+  const handleDemoLogin = async (role) => {
+    const credentials = demoCredentials[role];
+    if (credentials) {
+      setFormData(credentials);
+      try {
+        await login(credentials.email, credentials.password);
+      } catch (err) {
+        // Error is handled by the login function
+      }
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
       <div className="max-w-md w-full space-y-8">
-        {/* Header */}
         <div className="text-center">
-          <div className="flex justify-center">
-            <Database className="h-12 w-12 text-blue-600" />
-          </div>
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
             Sign in to AgriChain
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            Blockchain-based transparent data management
+            Your blockchain supply chain platform
           </p>
         </div>
 
-        {/* Form */}
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-blue-900">Demo Accounts</span>
+            <button
+              type="button"
+              onClick={() => setShowDemoAccounts(!showDemoAccounts)}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              {showDemoAccounts ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          
+          {showDemoAccounts && (
+            <div className="mt-3 space-y-2">
+              <p className="text-xs text-blue-800 mb-3">Click any role to auto-login:</p>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(demoCredentials).map(([role, creds]) => (
+                  <button
+                    key={role}
+                    onClick={() => handleDemoLogin(role)}
+                    className="text-left p-2 bg-white rounded border border-blue-200 hover:bg-blue-50 transition-colors"
+                    disabled={loading}
+                  >
+                    <div className="text-sm font-medium text-blue-900 capitalize">{role}</div>
+                    <div className="text-xs text-blue-600">{creds.email}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <form className="space-y-6" onSubmit={handleSubmit}>
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-4">
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          )}
+
           <div className="space-y-4">
-            {/* Email */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 Email address
@@ -91,83 +122,55 @@ const LoginPage = () => {
                 name="email"
                 type="email"
                 required
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Enter your email"
                 value={formData.email}
                 onChange={handleChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter your email"
               />
             </div>
 
-            {/* Password */}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                 Password
               </label>
-              <div className="mt-1 relative">
-                <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  className="block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Enter your password"
-                  value={formData.password}
-                  onChange={handleChange}
-                />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-5 w-5 text-gray-400" />
-                  ) : (
-                    <Eye className="h-5 w-5 text-gray-400" />
-                  )}
-                </button>
-              </div>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                required
+                value={formData.password}
+                onChange={handleChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter your password"
+              />
             </div>
           </div>
 
-          {/* Error message */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-md p-4">
-              <p className="text-sm text-red-600">{error}</p>
-            </div>
-          )}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+          >
+            {loading ? 'Signing in...' : 'Sign in'}
+          </button>
 
-          {/* Submit button */}
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <div className="flex items-center">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Signing in...
-                </div>
-              ) : (
-                <>
-                  <LogIn className="h-5 w-5 mr-2" />
-                  Sign in
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Register link */}
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Don't have an account?{' '}
+          <div className="text-center space-y-2">
+            <div>
               <Link
-                to="/register"
-                className="font-medium text-blue-600 hover:text-blue-500"
+                to="/forgot-password"
+                className="text-sm font-medium text-blue-600 hover:text-blue-500"
               >
-                Sign up here
+                Forgot your password?
               </Link>
-            </p>
+            </div>
+            <div>
+              <span className="text-sm text-gray-600">
+                Don't have an account?{' '}
+                <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
+                  Sign up
+                </Link>
+              </span>
+            </div>
           </div>
         </form>
       </div>

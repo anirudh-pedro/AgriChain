@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import authService from '../services/authService';
 
 // Auth context
 const AuthContext = createContext();
@@ -18,7 +19,7 @@ const initialState = {
   user: null,
   token: localStorage.getItem('authToken'),
   isAuthenticated: false,
-  loading: false,
+  loading: true, // Start with loading true to prevent premature redirects
   error: null
 };
 
@@ -87,57 +88,85 @@ export const AuthProvider = ({ children }) => {
   
   // Check if user is authenticated on app load
   useEffect(() => {
-    const token = localStorage.getItem('authToken');
-    const userData = localStorage.getItem('user');
-    
-    if (token && userData) {
+    const checkAuth = async () => {
       try {
-        const user = JSON.parse(userData);
-        dispatch({
-          type: AUTH_ACTIONS.SET_USER,
-          payload: user
-        });
+        if (authService.isAuthenticated()) {
+          const user = authService.getCurrentUser();
+          const token = authService.getToken();
+          
+          if (user && token && authService.validateToken(token)) {
+            dispatch({
+              type: AUTH_ACTIONS.SET_USER,
+              payload: user
+            });
+          } else {
+            // Invalid stored data, clear it
+            authService.logout();
+            dispatch({ type: AUTH_ACTIONS.LOGOUT });
+          }
+        } else {
+          // Not authenticated, clear any invalid data
+          authService.logout();
+          dispatch({ type: AUTH_ACTIONS.LOGOUT });
+        }
       } catch (error) {
-        // Invalid stored data, clear it
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('user');
+        console.error('Auth check failed:', error);
+        authService.logout();
         dispatch({ type: AUTH_ACTIONS.LOGOUT });
       }
-    }
+    };
+
+    checkAuth();
   }, []);
 
-  // Login function
-  const login = (token, user) => {
-    localStorage.setItem('authToken', token);
-    localStorage.setItem('user', JSON.stringify(user));
+  // Login function using authService
+  const login = async (email, password) => {
+    dispatch({ type: AUTH_ACTIONS.LOGIN_START });
     
-    dispatch({
-      type: AUTH_ACTIONS.LOGIN_SUCCESS,
-      payload: { token, user }
-    });
-  };
-
-  // Logout function
-  const logout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('user');
-    
-    dispatch({ type: AUTH_ACTIONS.LOGOUT });
-  };
-
-  // Set loading state
-  const setLoading = (loading) => {
-    if (loading) {
-      dispatch({ type: AUTH_ACTIONS.LOGIN_START });
+    try {
+      const result = await authService.login(email, password);
+      
+      dispatch({
+        type: AUTH_ACTIONS.LOGIN_SUCCESS,
+        payload: { token: result.token, user: result.user }
+      });
+      
+      return { success: true, message: result.message };
+    } catch (error) {
+      dispatch({
+        type: AUTH_ACTIONS.LOGIN_FAILURE,
+        payload: error.message
+      });
+      throw error;
     }
   };
 
-  // Set error
-  const setError = (error) => {
-    dispatch({
-      type: AUTH_ACTIONS.LOGIN_FAILURE,
-      payload: error
-    });
+  // Register function using authService
+  const register = async (userData) => {
+    dispatch({ type: AUTH_ACTIONS.LOGIN_START });
+    
+    try {
+      const result = await authService.register(userData);
+      
+      dispatch({
+        type: AUTH_ACTIONS.LOGIN_SUCCESS,
+        payload: { token: result.token, user: result.user }
+      });
+      
+      return { success: true, message: result.message };
+    } catch (error) {
+      dispatch({
+        type: AUTH_ACTIONS.LOGIN_FAILURE,
+        payload: error.message
+      });
+      throw error;
+    }
+  };
+
+  // Logout function using authService
+  const logout = () => {
+    authService.logout();
+    dispatch({ type: AUTH_ACTIONS.LOGOUT });
   };
 
   // Clear error
@@ -155,15 +184,26 @@ export const AuthProvider = ({ children }) => {
     return roles.includes(state.user?.role);
   };
 
+  // Get available user roles
+  const getUserRoles = () => {
+    return authService.getUserRoles();
+  };
+
+  // Get demo credentials for testing
+  const getDemoCredentials = () => {
+    return authService.getDemoCredentials();
+  };
+
   const value = {
     ...state,
     login,
+    register,
     logout,
-    setLoading,
-    setError,
     clearError,
     hasRole,
-    hasAnyRole
+    hasAnyRole,
+    getUserRoles,
+    getDemoCredentials
   };
 
   return (

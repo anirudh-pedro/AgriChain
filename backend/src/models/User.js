@@ -24,12 +24,44 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['ADMIN', 'USER', 'AUDITOR'],
-    default: 'USER'
+    enum: ['admin', 'farmer', 'distributor', 'retailer', 'consumer'],
+    default: 'consumer'
+  },
+  name: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 100
+  },
+  organization: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 100
+  },
+  location: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 100
+  },
+  phone: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 20
   },
   isActive: {
     type: Boolean,
     default: true
+  },
+  resetPasswordToken: {
+    type: String,
+    required: false
+  },
+  resetPasswordExpires: {
+    type: Date,
+    required: false
   }
 }, {
   timestamps: true

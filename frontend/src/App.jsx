@@ -1,65 +1,43 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-// import { ApolloProvider } from '@apollo/client';
-// import client from './utils/apollo';
 import { AuthProvider } from './context/AuthContext';
 
-// Layout Components
-import Layout from './components/Layout/Layout';
-import ProtectedRoute from './components/Layout/ProtectedRoute';
-
-// Page Components
 import LoginPage from './pages/Auth/LoginPage';
 import RegisterPage from './pages/Auth/RegisterPage';
+import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
+import ResetPasswordPage from './pages/Auth/ResetPasswordPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
-import TransactionsPage from './pages/Transactions/TransactionsPage';
-import SubmitTransactionPage from './pages/Transactions/SubmitTransactionPage';
-import BatchUploadPage from './pages/Transactions/BatchUploadPage';
-import AnalyticsPage from './pages/Analytics/AnalyticsPage';
-import UsersPage from './pages/Admin/UsersPage';
+import Layout from './components/Layout/Layout';
+import ProtectedRoute from './components/Layout/ProtectedRoute';
 
 import './App.css';
 
 function App() {
   return (
-    // <ApolloProvider client={client}>
-      <AuthProvider>
-        <Router>
-          <div className="App">
-            <Routes>
-              {/* Public routes */}
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              
-              {/* Protected routes */}
-              <Route element={<ProtectedRoute />}>
-                <Route element={<Layout />}>
-                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/dashboard" element={<DashboardPage />} />
-                  <Route path="/transactions" element={<TransactionsPage />} />
-                  <Route path="/submit" element={<SubmitTransactionPage />} />
-                  <Route path="/batch-upload" element={<BatchUploadPage />} />
-                  <Route path="/analytics" element={<AnalyticsPage />} />
-                  
-                  {/* Admin only routes */}
-                  <Route 
-                    path="/admin/users" 
-                    element={
-                      <ProtectedRoute requiredRoles={['ADMIN']}>
-                        <UsersPage />
-                      </ProtectedRoute>
-                    } 
-                  />
-                </Route>
-              </Route>
-              
-              {/* Catch all route */}
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
-          </div>
-        </Router>
-      </AuthProvider>
-    // </ApolloProvider>
+    <AuthProvider>
+      <Router>
+        <div className="App">
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route 
+              path="/dashboard" 
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <DashboardPage />
+                  </Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </div>
+      </Router>
+    </AuthProvider>
   );
 }
 

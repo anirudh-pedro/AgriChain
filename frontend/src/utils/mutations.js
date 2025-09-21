@@ -31,6 +31,62 @@ export const LOGIN_USER = gql`
   }
 `;
 
+// Produce/Blockchain Mutations
+export const ADD_PRODUCE = gql`
+  mutation AddProduce($input: ProduceInput!) {
+    addProduce(input: $input) {
+      success
+      data {
+        produceId
+        batchNumber
+        message
+      }
+      message
+    }
+  }
+`;
+
+export const TRANSFER_OWNERSHIP = gql`
+  mutation TransferOwnership($input: TransferOwnershipInput!) {
+    transferOwnership(input: $input) {
+      success
+      data {
+        produceId
+        newOwner
+        transferDate
+      }
+      message
+    }
+  }
+`;
+
+export const UPDATE_QUALITY = gql`
+  mutation UpdateQuality($input: QualityUpdateInput!) {
+    updateQuality(input: $input) {
+      success
+      data {
+        produceId
+        grade
+        inspectionId
+      }
+      message
+    }
+  }
+`;
+
+export const REGISTER_PARTICIPANT = gql`
+  mutation RegisterParticipant($input: ParticipantInput!) {
+    registerParticipant(input: $input) {
+      success
+      data {
+        participantId
+        participantType
+      }
+      message
+    }
+  }
+`;
+
 // Transaction Mutations
 export const SUBMIT_TRANSACTION = gql`
   mutation SubmitTransaction($input: TransactionInput!) {

@@ -14,6 +14,100 @@ export const GET_ME = gql`
   }
 `;
 
+// Produce/Blockchain Queries
+export const GET_PRODUCE_TRACE = gql`
+  query GetProduceTrace($produceId: String!) {
+    getProduceTrace(produceId: $produceId) {
+      success
+      data {
+        produceInfo {
+          id
+          batchNumber
+          type
+          variety
+          status
+        }
+        origin {
+          farmerId
+          farmName
+          harvestDate
+          location {
+            address
+            region
+            country
+          }
+        }
+        currentStatus {
+          owner {
+            participantId
+            participantType
+            ownershipDate
+          }
+          location
+        }
+        supplyChain {
+          previousOwner
+          newOwner
+          transferDate
+          transferReason
+          transferPrice
+        }
+        quality {
+          currentGrade
+          expiryDate
+        }
+        pricing {
+          currentPrice {
+            price
+            currency
+            priceType
+          }
+          priceHistory {
+            price
+            currency
+            priceType
+            date
+            participantId
+          }
+        }
+        certifications {
+          type
+          certifiedBy
+          validUntil
+        }
+        timeline {
+          eventType
+          eventDate
+          participantId
+          description
+        }
+      }
+      message
+    }
+  }
+`;
+
+export const GET_ALL_PRODUCE = gql`
+  query GetAllProduce($limit: Int, $offset: Int) {
+    getAllProduce(limit: $limit, offset: $offset) {
+      success
+      data {
+        id
+        batchNumber
+        type
+        variety
+        status
+        farmerId
+        farmName
+        harvestDate
+        currentGrade
+        currentOwner
+      }
+      message
+    }
+  }
+`;
+
 // Transaction Queries
 export const GET_TRANSACTIONS = gql`
   query GetTransactions($filter: TransactionFilter, $limit: Int, $offset: Int) {

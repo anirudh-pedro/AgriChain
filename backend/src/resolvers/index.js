@@ -46,6 +46,58 @@ const resolvers = {
       return authService.requireAuth(user);
     },
 
+    // Validate token
+    validateToken: async (parent, args, { user }) => {
+      if (!user) {
+        return { valid: false };
+      }
+      try {
+        const validUser = await authService.requireAuth(user);
+        return { 
+          valid: true, 
+          user: {
+            id: validUser.id,
+            username: validUser.username,
+            email: validUser.email,
+            role: validUser.role,
+            name: validUser.name,
+            organization: validUser.organization,
+            location: validUser.location
+          }
+        };
+      } catch (error) {
+        return { valid: false };
+      }
+    },
+
+    // Validate password reset token
+    validateResetToken: async (parent, { token }) => {
+      try {
+        const user = await User.findOne({
+          resetPasswordToken: token,
+          resetPasswordExpires: { $gt: Date.now() }
+        });
+
+        if (!user) {
+          return {
+            valid: false,
+            message: 'Invalid or expired reset token'
+          };
+        }
+
+        return {
+          valid: true,
+          message: 'Token is valid'
+        };
+      } catch (error) {
+        console.error('Token validation error:', error);
+        return {
+          valid: false,
+          message: 'Error validating token'
+        };
+      }
+    },
+
     // Get transactions with filtering
     transactions: async (parent, { filter = {}, limit = 10, offset = 0 }, { user }) => {
       authService.requireAuth(user);
@@ -279,16 +331,28 @@ const resolvers = {
   Mutation: {
     // User registration
     register: async (parent, { input }) => {
-      const { username, email, password, role } = input;
+      const { username, email, password, role, name, organization, location, phone } = input;
 
       // Check if user already exists
       const existingUser = await User.findOne({ $or: [{ email }, { username }] });
       if (existingUser) {
-        throw new Error('User with this email or username already exists');
+        return {
+          success: false,
+          message: 'User with this email or username already exists'
+        };
       }
 
       // Create new user
-      const user = new User({ username, email, password, role });
+      const user = new User({ 
+        username, 
+        email, 
+        password, 
+        role: role || 'consumer',
+        name,
+        organization,
+        location,
+        phone
+      });
       await user.save();
 
       // Register user in blockchain wallet
@@ -301,7 +365,21 @@ const resolvers = {
       // Generate token
       const token = authService.generateToken(user.id);
 
-      return { token, user };
+      return { 
+        success: true,
+        message: 'Registration successful',
+        token, 
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          name: user.name,
+          organization: user.organization,
+          location: user.location,
+          phone: user.phone
+        }
+      };
     },
 
     // User login
@@ -311,24 +389,164 @@ const resolvers = {
       // Find user by email
       const user = await User.findOne({ email });
       if (!user) {
-        throw new Error('Invalid email or password');
+        return {
+          success: false,
+          message: 'Invalid email or password'
+        };
       }
 
       // Check password
       const isValidPassword = await user.comparePassword(password);
       if (!isValidPassword) {
-        throw new Error('Invalid email or password');
+        return {
+          success: false,
+          message: 'Invalid email or password'
+        };
       }
 
       // Check if user is active
       if (!user.isActive) {
-        throw new Error('Account is deactivated');
+        return {
+          success: false,
+          message: 'Account is deactivated'
+        };
       }
 
       // Generate token
       const token = authService.generateToken(user.id);
 
-      return { token, user };
+      return { 
+        success: true,
+        message: 'Login successful',
+        token, 
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          name: user.name,
+          organization: user.organization,
+          location: user.location,
+          phone: user.phone
+        }
+      };
+    },
+
+    // Update user profile
+    updateProfile: async (parent, { input }, { user }) => {
+      try {
+        const currentUser = await authService.requireAuth(user);
+        
+        // Update user with new data
+        const updatedUser = await User.findByIdAndUpdate(
+          currentUser.id,
+          { $set: input },
+          { new: true, runValidators: true }
+        );
+
+        if (!updatedUser) {
+          return {
+            success: false,
+            message: 'User not found'
+          };
+        }
+
+        return {
+          success: true,
+          message: 'Profile updated successfully',
+          user: {
+            id: updatedUser.id,
+            username: updatedUser.username,
+            email: updatedUser.email,
+            role: updatedUser.role,
+            name: updatedUser.name,
+            organization: updatedUser.organization,
+            location: updatedUser.location
+          }
+        };
+      } catch (error) {
+        return {
+          success: false,
+          message: error.message || 'Failed to update profile'
+        };
+      }
+    },
+
+    // Forgot Password
+    forgotPassword: async (parent, { email }) => {
+      try {
+        const user = await User.findOne({ email: email.toLowerCase() });
+        
+        if (!user) {
+          // Don't reveal if email exists or not for security
+          return {
+            success: true,
+            message: 'If an account with that email exists, a password reset link has been sent.'
+          };
+        }
+
+        // Generate reset token
+        const crypto = require('crypto');
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        
+        // Set token and expiration (1 hour)
+        user.resetPasswordToken = resetToken;
+        user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+        await user.save();
+
+        // In a real application, you would send an email here
+        // For now, we'll log the reset URL
+        const resetUrl = `http://localhost:5173/reset-password?token=${resetToken}`;
+        console.log(`Password reset URL for ${email}: ${resetUrl}`);
+
+        return {
+          success: true,
+          message: 'If an account with that email exists, a password reset link has been sent.'
+        };
+      } catch (error) {
+        console.error('Forgot password error:', error);
+        return {
+          success: false,
+          message: 'An error occurred while processing your request.'
+        };
+      }
+    },
+
+    // Reset Password
+    resetPassword: async (parent, { input }) => {
+      try {
+        const { token, password } = input;
+
+        // Find user with valid reset token
+        const user = await User.findOne({
+          resetPasswordToken: token,
+          resetPasswordExpires: { $gt: Date.now() }
+        });
+
+        if (!user) {
+          return {
+            success: false,
+            message: 'Invalid or expired reset token'
+          };
+        }
+
+        // Update password and clear reset token
+        user.password = password;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpires = undefined;
+        await user.save();
+
+        return {
+          success: true,
+          message: 'Password has been reset successfully'
+        };
+      } catch (error) {
+        console.error('Reset password error:', error);
+        return {
+          success: false,
+          message: 'An error occurred while resetting your password.'
+        };
+      }
     },
 
     // Submit single transaction

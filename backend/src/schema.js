@@ -7,19 +7,39 @@ const typeDefs = gql`
     username: String!
     email: String!
     role: UserRole!
+    name: String
+    organization: String
+    location: String
+    phone: String
     createdAt: String!
     updatedAt: String!
   }
 
   enum UserRole {
-    ADMIN
-    USER
-    AUDITOR
+    admin
+    farmer
+    distributor
+    retailer
+    consumer
   }
 
   type AuthPayload {
-    token: String!
-    user: User!
+    success: Boolean!
+    message: String!
+    token: String
+    user: User
+  }
+
+  type AuthResponse {
+    success: Boolean!
+    message: String!
+    token: String
+    user: User
+  }
+
+  type TokenValidation {
+    valid: Boolean!
+    user: User
   }
 
   # Transaction Types
@@ -87,12 +107,43 @@ const typeDefs = gql`
     username: String!
     email: String!
     password: String!
-    role: UserRole = USER
+    role: UserRole = consumer
+    name: String
+    organization: String
+    location: String
+    phone: String
+  }
+
+  input UpdateProfileInput {
+    username: String
+    name: String
+    organization: String
+    location: String
   }
 
   input LoginInput {
     email: String!
     password: String!
+  }
+
+  input ResetPasswordInput {
+    token: String!
+    password: String!
+  }
+
+  type ResetPasswordResponse {
+    success: Boolean!
+    message: String!
+  }
+
+  type ForgotPasswordResponse {
+    success: Boolean!
+    message: String!
+  }
+
+  type ValidateResetTokenResponse {
+    valid: Boolean!
+    message: String!
   }
 
   input TransactionInput {
@@ -109,10 +160,12 @@ const typeDefs = gql`
     search: String
   }
 
-  # Queries
+    # Queries
   type Query {
     # Authentication
     me: User
+    validateToken: TokenValidation
+    validateResetToken(token: String!): ValidateResetTokenResponse!
 
     # Transactions
     transactions(filter: TransactionFilter, limit: Int = 10, offset: Int = 0): [Transaction!]!
@@ -140,8 +193,11 @@ const typeDefs = gql`
   # Mutations
   type Mutation {
     # Authentication
-    register(input: RegisterInput!): AuthPayload!
-    login(input: LoginInput!): AuthPayload!
+    register(input: RegisterInput!): AuthResponse!
+    login(input: LoginInput!): AuthResponse!
+    updateProfile(input: UpdateProfileInput!): AuthResponse!
+    forgotPassword(email: String!): ForgotPasswordResponse!
+    resetPassword(input: ResetPasswordInput!): ResetPasswordResponse!
 
     # Transactions
     submitTransaction(input: TransactionInput!): Transaction!
