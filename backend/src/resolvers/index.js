@@ -1,9 +1,12 @@
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const BatchUpload = require('../models/BatchUpload');
+const Produce = require('../models/Produce');
+const Purchase = require('../models/Purchase');
 const authService = require('../middleware/auth');
 const blockchainService = require('../services/blockchain');
 const FabricService = require('../services/fabricService');
+const traceabilityResolvers = require('./traceabilityResolvers');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
@@ -62,7 +65,17 @@ const resolvers = {
             role: validUser.role,
             name: validUser.name,
             organization: validUser.organization,
-            location: validUser.location
+            location: validUser.location,
+            phone: validUser.phone,
+            // Include role-specific fields
+            aadhaarId: validUser.aadhaarId,
+            landLocation: validUser.landLocation,
+            typeOfProduce: validUser.typeOfProduce,
+            gstin: validUser.gstin,
+            businessName: validUser.businessName,
+            contactPerson: validUser.contactPerson,
+            businessAddress: validUser.businessAddress,
+            licenseNumber: validUser.licenseNumber
           }
         };
       } catch (error) {
@@ -324,6 +337,170 @@ const resolvers = {
         console.error('Blockchain history error:', error);
         throw new Error(`History not available: ${error.message}`);
       }
+    },
+
+    // === Produce Queries ===
+    produce: async (parent, { filter = {}, limit = 20, offset = 0 }, { user }) => {
+      authService.requireAuth(user);
+      
+      const query = { status: 'AVAILABLE' };
+      
+      if (filter.cropName) {
+        query.cropName = { $regex: filter.cropName, $options: 'i' };
+      }
+      
+      if (filter.farmer) {
+        query.farmer = filter.farmer;
+      }
+      
+      if (filter.priceMin !== undefined || filter.priceMax !== undefined) {
+        query.price = {};
+        if (filter.priceMin !== undefined) query.price.$gte = filter.priceMin;
+        if (filter.priceMax !== undefined) query.price.$lte = filter.priceMax;
+      }
+      
+      if (filter.quality) {
+        query.quality = filter.quality;
+      }
+      
+      if (filter.organic !== undefined) {
+        query.organic = filter.organic;
+      }
+      
+      if (filter.status) {
+        query.status = filter.status;
+      }
+      
+      if (filter.search) {
+        query.$or = [
+          { cropName: { $regex: filter.search, $options: 'i' } },
+          { farmLocation: { $regex: filter.search, $options: 'i' } },
+          { description: { $regex: filter.search, $options: 'i' } }
+        ];
+      }
+      
+      return await Produce.find(query)
+        .populate('farmer', 'name username email location')
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(offset);
+    },
+
+    produceById: async (parent, { id }, { user }) => {
+      authService.requireAuth(user);
+      
+      const produce = await Produce.findById(id).populate('farmer', 'name username email location');
+      if (!produce) {
+        throw new Error('Produce not found');
+      }
+      
+      return produce;
+    },
+
+    myProduce: async (parent, { status }, { user }) => {
+      authService.requireAuth(user);
+      
+      const query = { farmer: user.id };
+      if (status) {
+        query.status = status;
+      }
+      
+      return await Produce.find(query)
+        .populate('farmer', 'name username email location')
+        .sort({ createdAt: -1 });
+    },
+
+    // === Purchase Queries ===
+    purchases: async (parent, { limit = 20, offset = 0 }, { user }) => {
+      authService.requireRole(user, ['admin']);
+      
+      return await Purchase.find()
+        .populate('produce')
+        .populate('buyer', 'name username email')
+        .populate('seller', 'name username email')
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(offset);
+    },
+
+    myPurchases: async (parent, args, { user }) => {
+      authService.requireAuth(user);
+      
+      return await Purchase.find({ buyer: user.id })
+        .populate('produce')
+        .populate('seller', 'name username email')
+        .sort({ createdAt: -1 });
+    },
+
+    mySales: async (parent, args, { user }) => {
+      authService.requireAuth(user);
+      
+      return await Purchase.find({ seller: user.id })
+        .populate('produce')
+        .populate('buyer', 'name username email')
+        .sort({ createdAt: -1 });
+    },
+
+    // === Dashboard Queries ===
+    dashboardStats: async (parent, args, { user }) => {
+      authService.requireAuth(user);
+      
+      const stats = {};
+      
+      if (user.role === 'farmer') {
+        const myProduce = await Produce.find({ farmer: user.id });
+        const mySales = await Purchase.find({ seller: user.id });
+        
+        stats.totalProduce = myProduce.length;
+        stats.availableProduce = myProduce.filter(p => p.status === 'AVAILABLE').length;
+        stats.soldProduce = myProduce.filter(p => p.status === 'SOLD').length;
+        
+        const thisMonth = new Date();
+        thisMonth.setDate(1);
+        thisMonth.setHours(0, 0, 0, 0);
+        
+        const thisMonthSales = mySales.filter(s => s.purchaseDate >= thisMonth);
+        stats.thisMonthEarnings = thisMonthSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+        
+        const allEarnings = mySales.filter(s => s.status === 'DELIVERED');
+        stats.totalEarnings = allEarnings.reduce((sum, sale) => sum + sale.totalAmount, 0);
+        
+        const pendingSales = mySales.filter(s => ['PROCESSING', 'CONFIRMED', 'IN_TRANSIT'].includes(s.status));
+        stats.pendingPayments = pendingSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+        
+      } else if (['distributor', 'retailer', 'consumer'].includes(user.role)) {
+        const myPurchases = await Purchase.find({ buyer: user.id });
+        
+        stats.activePurchases = myPurchases.filter(p => ['PROCESSING', 'CONFIRMED', 'IN_TRANSIT'].includes(p.status)).length;
+        stats.totalPurchases = myPurchases.length;
+        
+        const thisMonth = new Date();
+        thisMonth.setDate(1);
+        thisMonth.setHours(0, 0, 0, 0);
+        
+        const thisMonthPurchases = myPurchases.filter(p => p.purchaseDate >= thisMonth);
+        stats.thisMonthSpent = thisMonthPurchases.reduce((sum, purchase) => sum + purchase.totalAmount, 0);
+        
+      } else if (user.role === 'admin') {
+        const totalUsers = await User.countDocuments();
+        const totalProduce = await Produce.countDocuments();
+        const totalPurchases = await Purchase.countDocuments();
+        
+        stats.totalUsers = totalUsers;
+        stats.totalProduce = totalProduce;
+        stats.totalPurchases = totalPurchases;
+        
+        const thisMonth = new Date();
+        thisMonth.setDate(1);
+        thisMonth.setHours(0, 0, 0, 0);
+        
+        const thisMonthTransactions = await Purchase.find({ 
+          purchaseDate: { $gte: thisMonth } 
+        });
+        stats.thisMonthEarnings = thisMonthTransactions.reduce((sum, t) => sum + t.totalAmount, 0);
+      }
+      
+      return stats;
     }
   },
 
@@ -331,7 +508,13 @@ const resolvers = {
   Mutation: {
     // User registration
     register: async (parent, { input }) => {
-      const { username, email, password, role, name, organization, location, phone } = input;
+      const { 
+        username, email, password, role, name, organization, location, phone,
+        // Farmer-specific fields
+        aadhaarId, landLocation, typeOfProduce,
+        // Distributor/Retailer-specific fields
+        gstin, businessName, contactPerson, businessAddress, licenseNumber
+      } = input;
 
       // Check if user already exists
       const existingUser = await User.findOne({ $or: [{ email }, { username }] });
@@ -342,8 +525,8 @@ const resolvers = {
         };
       }
 
-      // Create new user
-      const user = new User({ 
+      // Create new user with role-specific fields
+      const userData = { 
         username, 
         email, 
         password, 
@@ -352,7 +535,22 @@ const resolvers = {
         organization,
         location,
         phone
-      });
+      };
+
+      // Add role-specific fields
+      if (role === 'farmer') {
+        if (aadhaarId) userData.aadhaarId = aadhaarId;
+        if (landLocation) userData.landLocation = landLocation;
+        if (typeOfProduce) userData.typeOfProduce = typeOfProduce;
+      } else if (role === 'distributor' || role === 'retailer') {
+        if (gstin) userData.gstin = gstin;
+        if (businessName) userData.businessName = businessName;
+        if (contactPerson) userData.contactPerson = contactPerson;
+        if (businessAddress) userData.businessAddress = businessAddress;
+        if (licenseNumber) userData.licenseNumber = licenseNumber;
+      }
+
+      const user = new User(userData);
       await user.save();
 
       // Register user in blockchain wallet
@@ -377,7 +575,16 @@ const resolvers = {
           name: user.name,
           organization: user.organization,
           location: user.location,
-          phone: user.phone
+          phone: user.phone,
+          // Include role-specific fields in response
+          aadhaarId: user.aadhaarId,
+          landLocation: user.landLocation,
+          typeOfProduce: user.typeOfProduce,
+          gstin: user.gstin,
+          businessName: user.businessName,
+          contactPerson: user.contactPerson,
+          businessAddress: user.businessAddress,
+          licenseNumber: user.licenseNumber
         }
       };
     },
@@ -427,7 +634,16 @@ const resolvers = {
           name: user.name,
           organization: user.organization,
           location: user.location,
-          phone: user.phone
+          phone: user.phone,
+          // Include role-specific fields
+          aadhaarId: user.aadhaarId,
+          landLocation: user.landLocation,
+          typeOfProduce: user.typeOfProduce,
+          gstin: user.gstin,
+          businessName: user.businessName,
+          contactPerson: user.contactPerson,
+          businessAddress: user.businessAddress,
+          licenseNumber: user.licenseNumber
         }
       };
     },
@@ -461,7 +677,17 @@ const resolvers = {
             role: updatedUser.role,
             name: updatedUser.name,
             organization: updatedUser.organization,
-            location: updatedUser.location
+            location: updatedUser.location,
+            phone: updatedUser.phone,
+            // Include role-specific fields
+            aadhaarId: updatedUser.aadhaarId,
+            landLocation: updatedUser.landLocation,
+            typeOfProduce: updatedUser.typeOfProduce,
+            gstin: updatedUser.gstin,
+            businessName: updatedUser.businessName,
+            contactPerson: updatedUser.contactPerson,
+            businessAddress: updatedUser.businessAddress,
+            licenseNumber: updatedUser.licenseNumber
           }
         };
       } catch (error) {
@@ -624,6 +850,228 @@ const resolvers = {
       return !!deletedUser;
     },
 
+    // === Produce Mutations ===
+    addProduce: async (parent, { input }, { user }) => {
+      authService.requireRole(user, ['farmer']);
+      
+      const produce = new Produce({
+        ...input,
+        farmer: user.id
+      });
+      
+      // Initialize the journey
+      await produce.save();
+      await produce.initializeJourney();
+      
+      // Optionally create blockchain entry
+      try {
+        if (fabricService.isConnected) {
+          const blockchainData = await fabricService.createData({
+            type: 'PRODUCE_REGISTRATION',
+            farmerId: user.id,
+            cropType: input.cropName,
+            quantity: input.quantity,
+            location: input.farmLocation,
+            quality: input.quality,
+            customData: JSON.stringify({
+              harvestDate: input.harvestDate,
+              price: input.price,
+              organic: input.organic
+            })
+          });
+          
+          produce.blockchainId = blockchainData.id;
+          await produce.save();
+        }
+      } catch (error) {
+        console.error('Blockchain entry failed for produce:', error);
+        // Continue without blockchain - produce is still saved
+      }
+      
+      return await Produce.findById(produce._id).populate('farmer', 'name username email location');
+    },
+
+    updateProduce: async (parent, { id, input }, { user }) => {
+      authService.requireAuth(user);
+      
+      const produce = await Produce.findById(id);
+      if (!produce) {
+        throw new Error('Produce not found');
+      }
+      
+      // Check ownership
+      if (produce.farmer.toString() !== user.id && user.role !== 'admin') {
+        throw new Error('Not authorized to update this produce');
+      }
+      
+      Object.assign(produce, input);
+      await produce.save();
+      
+      return await Produce.findById(id).populate('farmer', 'name username email location');
+    },
+
+    deleteProduce: async (parent, { id }, { user }) => {
+      authService.requireAuth(user);
+      
+      const produce = await Produce.findById(id);
+      if (!produce) {
+        throw new Error('Produce not found');
+      }
+      
+      // Check ownership
+      if (produce.farmer.toString() !== user.id && user.role !== 'admin') {
+        throw new Error('Not authorized to delete this produce');
+      }
+      
+      // Can only delete if not sold
+      if (produce.status !== 'AVAILABLE') {
+        throw new Error('Cannot delete produce that has been sold');
+      }
+      
+      await Produce.findByIdAndDelete(id);
+      return true;
+    },
+
+    updateProduceStatus: async (parent, { id, status }, { user }) => {
+      authService.requireAuth(user);
+      
+      const produce = await Produce.findById(id);
+      if (!produce) {
+        throw new Error('Produce not found');
+      }
+      
+      // Check authorization based on status change
+      if (user.role !== 'admin' && produce.farmer.toString() !== user.id) {
+        throw new Error('Not authorized to update this produce status');
+      }
+      
+      produce.status = status;
+      await produce.save();
+      
+      return await Produce.findById(id).populate('farmer', 'name username email location');
+    },
+
+    // === Purchase Mutations ===
+    createPurchase: async (parent, { input }, { user }) => {
+      authService.requireAuth(user);
+      
+      const produce = await Produce.findById(input.produceId).populate('farmer');
+      if (!produce) {
+        throw new Error('Produce not found');
+      }
+      
+      if (produce.status !== 'AVAILABLE') {
+        throw new Error('Produce is not available for purchase');
+      }
+      
+      // Can't buy from yourself
+      if (produce.farmer._id.toString() === user.id) {
+        throw new Error('Cannot purchase your own produce');
+      }
+      
+      // Calculate total amount based on quantity and price
+      const quantityNum = parseFloat(input.quantity.replace(/[^\d.]/g, ''));
+      const totalAmount = quantityNum * produce.price;
+      
+      const purchase = new Purchase({
+        produce: input.produceId,
+        buyer: user.id,
+        seller: produce.farmer._id,
+        quantity: input.quantity,
+        totalAmount,
+        deliveryAddress: input.deliveryAddress,
+        notes: input.notes
+      });
+      
+      await purchase.save();
+      await purchase.calculateDeliveryDate();
+      
+      // Update produce status
+      produce.status = 'SOLD';
+      await produce.save();
+      
+      // Update produce journey
+      await produce.updateJourney('Distributor', user.organization || 'Distribution Center');
+      
+      // Create blockchain transaction
+      try {
+        if (fabricService.isConnected) {
+          await fabricService.createData({
+            type: 'PURCHASE_TRANSACTION',
+            customData: JSON.stringify({
+              purchaseId: purchase._id,
+              produceId: produce._id,
+              buyerId: user.id,
+              sellerId: produce.farmer._id,
+              amount: totalAmount,
+              quantity: input.quantity
+            })
+          });
+        }
+      } catch (error) {
+        console.error('Blockchain transaction recording failed:', error);
+        // Continue - purchase is still valid
+      }
+      
+      return await Purchase.findById(purchase._id)
+        .populate('produce')
+        .populate('buyer', 'name username email')
+        .populate('seller', 'name username email');
+    },
+
+    updatePurchaseStatus: async (parent, { id, status }, { user }) => {
+      authService.requireAuth(user);
+      
+      const purchase = await Purchase.findById(id);
+      if (!purchase) {
+        throw new Error('Purchase not found');
+      }
+      
+      // Check authorization
+      const isAuthorized = purchase.buyer.toString() === user.id || 
+                          purchase.seller.toString() === user.id ||
+                          user.role === 'admin';
+                          
+      if (!isAuthorized) {
+        throw new Error('Not authorized to update this purchase');
+      }
+      
+      await purchase.updateStatus(status);
+      
+      return await Purchase.findById(id)
+        .populate('produce')
+        .populate('buyer', 'name username email')
+        .populate('seller', 'name username email');
+    },
+
+    ratePurchase: async (parent, { id, rating, review }, { user }) => {
+      authService.requireAuth(user);
+      
+      const purchase = await Purchase.findById(id);
+      if (!purchase) {
+        throw new Error('Purchase not found');
+      }
+      
+      // Only buyer can rate
+      if (purchase.buyer.toString() !== user.id) {
+        throw new Error('Only the buyer can rate this purchase');
+      }
+      
+      // Can only rate delivered purchases
+      if (purchase.status !== 'DELIVERED') {
+        throw new Error('Can only rate delivered purchases');
+      }
+      
+      purchase.rating = rating;
+      if (review) purchase.review = review;
+      await purchase.save();
+      
+      return await Purchase.findById(id)
+        .populate('produce')
+        .populate('buyer', 'name username email')
+        .populate('seller', 'name username email');
+    },
+
     // === Fabric Blockchain Operations ===
     
     // Create blockchain data entry
@@ -741,4 +1189,16 @@ const resolvers = {
   }
 };
 
-module.exports = resolvers;
+// Merge traceability resolvers
+const mergedResolvers = {
+  Query: {
+    ...resolvers.Query,
+    ...traceabilityResolvers.Query
+  },
+  Mutation: {
+    ...resolvers.Mutation,
+    ...traceabilityResolvers.Mutation
+  }
+};
+
+module.exports = mergedResolvers;

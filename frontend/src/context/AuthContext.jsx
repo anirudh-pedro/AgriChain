@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
 import authService from '../services/authService';
 
 // Auth context
@@ -17,7 +17,7 @@ const AUTH_ACTIONS = {
 // Initial auth state
 const initialState = {
   user: null,
-  token: localStorage.getItem('authToken'),
+  token: null, // Don't access localStorage in initial state
   isAuthenticated: false,
   loading: true, // Start with loading true to prevent premature redirects
   error: null
@@ -66,7 +66,8 @@ function authReducer(state, action) {
     case AUTH_ACTIONS.SET_USER:
       return {
         ...state,
-        user: action.payload,
+        user: action.payload.user || action.payload,
+        token: action.payload.token || state.token,
         isAuthenticated: true,
         loading: false
       };
@@ -97,7 +98,7 @@ export const AuthProvider = ({ children }) => {
           if (user && token && authService.validateToken(token)) {
             dispatch({
               type: AUTH_ACTIONS.SET_USER,
-              payload: user
+              payload: { user, token }
             });
           } else {
             // Invalid stored data, clear it
@@ -120,7 +121,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   // Login function using authService
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     dispatch({ type: AUTH_ACTIONS.LOGIN_START });
     
     try {
@@ -139,7 +140,7 @@ export const AuthProvider = ({ children }) => {
       });
       throw error;
     }
-  };
+  }, []);
 
   // Register function using authService
   const register = async (userData) => {
@@ -164,15 +165,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Logout function using authService
-  const logout = () => {
+  const logout = useCallback(() => {
     authService.logout();
     dispatch({ type: AUTH_ACTIONS.LOGOUT });
-  };
+  }, []);
 
   // Clear error
-  const clearError = () => {
+  const clearError = useCallback(() => {
     dispatch({ type: AUTH_ACTIONS.CLEAR_ERROR });
-  };
+  }, []);
 
   // Check if user has specific role
   const hasRole = (role) => {
@@ -190,9 +191,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Get demo credentials for testing
-  const getDemoCredentials = () => {
+  const getDemoCredentials = useCallback(() => {
     return authService.getDemoCredentials();
-  };
+  }, []);
 
   const value = {
     ...state,

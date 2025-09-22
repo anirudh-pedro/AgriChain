@@ -51,6 +51,70 @@ const userSchema = new mongoose.Schema({
     trim: true,
     maxlength: 20
   },
+  // Farmer-specific fields
+  aadhaarId: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 12,
+    validate: {
+      validator: function(v) {
+        if (!v) return true; // Allow empty
+        return /^\d{12}$/.test(v);
+      },
+      message: 'Aadhaar ID must be 12 digits'
+    }
+  },
+  landLocation: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 200
+  },
+  typeOfProduce: {
+    type: String,
+    required: false,
+    enum: ['grains', 'vegetables', 'fruits', 'pulses', 'spices', 'dairy', 'other', ''],
+    default: ''
+  },
+  // Distributor/Retailer-specific fields
+  gstin: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 15,
+    validate: {
+      validator: function(v) {
+        if (!v) return true; // Allow empty
+        return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(v);
+      },
+      message: 'Invalid GSTIN format'
+    }
+  },
+  businessName: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 200
+  },
+  contactPerson: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 100
+  },
+  businessAddress: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 500
+  },
+  licenseNumber: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 50
+  },
   isActive: {
     type: Boolean,
     default: true
