@@ -40,10 +40,11 @@ async function startServer() {
   const server = new ApolloServer({
     typeDefs,
     resolvers,
-    context: ({ req }) => {
+    context: async ({ req }) => {
       // Add authentication context
       const token = req.headers.authorization || '';
-      return { token, user: authMiddleware.getUser(token) };
+      const user = await authMiddleware.getUser(token);
+      return { token, user };
     },
     introspection: process.env.NODE_ENV !== 'production',
     playground: process.env.NODE_ENV !== 'production',

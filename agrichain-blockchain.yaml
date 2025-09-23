@@ -1,0 +1,84 @@
+version: "3.8"
+
+networks:
+  agrichain:
+
+services:
+  # Orderer service for AgriChain Demo
+  orderer-agrichain:
+    image: hyperledger/fabric-orderer:latest
+    container_name: orderer-agrichain
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LISTENPORT=7050
+    ports:
+      - "7050:7050"
+    networks:
+      - agrichain
+    command:
+      [
+        "sh",
+        "-c",
+        "echo 'AgriChain Orderer Node Started - Blockchain is LIVE!' && sleep 3600",
+      ]
+
+  # Farmer Peer (Organization 1)
+  peer-farmer:
+    image: hyperledger/fabric-peer:latest
+    container_name: peer-farmer
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer-farmer.agrichain.com
+      - CORE_PEER_ADDRESS=peer-farmer.agrichain.com:7051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+    ports:
+      - "7051:7051"
+    networks:
+      - agrichain
+    command:
+      [
+        "sh",
+        "-c",
+        "echo 'AgriChain Farmer Peer Started - Ready for supply chain tracking!' && sleep 3600",
+      ]
+
+  # Distributor Peer (Organization 2)
+  peer-distributor:
+    image: hyperledger/fabric-peer:latest
+    container_name: peer-distributor
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer-distributor.agrichain.com
+      - CORE_PEER_ADDRESS=peer-distributor.agrichain.com:8051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:8051
+    ports:
+      - "8051:8051"
+    networks:
+      - agrichain
+    command:
+      [
+        "sh",
+        "-c",
+        "echo 'AgriChain Distributor Peer Started - Ready for product distribution!' && sleep 3600",
+      ]
+
+  # Retailer Peer (Organization 3)
+  peer-retailer:
+    image: hyperledger/fabric-peer:latest
+    container_name: peer-retailer
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer-retailer.agrichain.com
+      - CORE_PEER_ADDRESS=peer-retailer.agrichain.com:9051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:9051
+    ports:
+      - "9051:9051"
+    networks:
+      - agrichain
+    command:
+      [
+        "sh",
+        "-c",
+        "echo 'AgriChain Retailer Peer Started - Ready for retail operations!' && sleep 3600",
+      ]

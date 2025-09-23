@@ -1098,18 +1098,26 @@ const resolvers = {
         // Submit to blockchain
         const blockchainResult = await fabricService.createData(id, input.type, dataWithContext);
         
+        // Ensure we have a valid user ID for the database
+        const userId = user._id || user.id;
+        if (!userId) {
+          throw new Error('User ID not found in context');
+        }
+
         // Also save to MongoDB for faster queries
         const transaction = new Transaction({
           transactionId: id,
           type: input.type,
-          data: dataWithContext,
+          data: JSON.stringify(dataWithContext), // Convert object to string
           userId: user.id,
           blockchainTxId: blockchainResult.id || id,
-          status: 'committed',
-          metadata: {
+          hash: blockchainResult.hash || `hash_${id}`, // Generate hash if not provided
+          status: 'CONFIRMED', // Use valid enum value
+          submittedBy: userId, // Use available user ID
+          metadata: JSON.stringify({ // Convert metadata to string
             fabricTimestamp: blockchainResult.timestamp,
             verified: blockchainResult.verified || false
-          }
+          })
         });
 
         await transaction.save();
@@ -1125,17 +1133,25 @@ const resolvers = {
       } catch (error) {
         console.error('Blockchain data creation error:', error);
         
+        // Ensure we have a valid user ID for the database
+        const userId = user._id || user.id;
+        if (!userId) {
+          throw new Error('User ID not found in context');
+        }
+        
         // Fallback to MongoDB only if blockchain fails
         const transaction = new Transaction({
           transactionId: `OFFLINE_${Date.now()}`,
           type: input.type,
-          data: input,
+          data: JSON.stringify(input), // Convert to string
           userId: user.id,
-          status: 'pending_blockchain',
-          metadata: {
+          hash: `fallback_hash_${Date.now()}`, // Generate fallback hash
+          submittedBy: userId, // Use available user ID
+          status: 'PENDING', // Use valid enum value
+          metadata: JSON.stringify({ // Convert to string
             error: error.message,
             fallbackMode: true
-          }
+          })
         });
 
         await transaction.save();

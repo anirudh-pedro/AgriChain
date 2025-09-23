@@ -572,6 +572,19 @@ const typeDefs = gql`
     createdBy: String
     verifiedBy: String
     verifiedAt: String
+    # Product data fields
+    farmerId: String
+    cropType: String
+    quantity: String
+    unit: String
+    location: String
+    quality: String
+    customData: String
+    processType: String
+    sourceDataId: String
+    inputQuantity: String
+    outputQuantity: String
+    outputProduct: String
   }
 
   type BlockchainQueryResult {

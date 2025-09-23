@@ -7,6 +7,69 @@ import Card, { StatsCard } from '../../components/UI/Card';
 import LocationPicker from '../../components/UI/LocationPicker';
 import { LineChart } from '../../components/UI/Charts';
 
+// GraphQL mutations and queries
+const CREATE_BLOCKCHAIN_DATA = `
+  mutation CreateBlockchainData($input: BlockchainDataInput!) {
+    createBlockchainData(input: $input) {
+      id
+      success
+      blockchainTxId
+      message
+      data {
+        id
+        type
+        timestamp
+        verified
+      }
+    }
+  }
+`;
+
+const QUERY_ALL_BLOCKCHAIN_DATA = `
+  query AllBlockchainData {
+    allBlockchainData {
+      Key
+      Record {
+        id
+        type
+        timestamp
+        verified
+      }
+    }
+  }
+`;
+
+// API call function
+const makeGraphQLRequest = async (query, variables = {}) => {
+  try {
+    // Get the authentication token from localStorage
+    const token = localStorage.getItem('authToken');
+    
+    const response = await fetch('http://localhost:4000/graphql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+      body: JSON.stringify({
+        query,
+        variables
+      })
+    });
+
+    const result = await response.json();
+    
+    if (result.errors) {
+      throw new Error(result.errors[0].message);
+    }
+    
+    return result.data;
+  } catch (error) {
+    console.error('GraphQL Error:', error);
+    throw error;
+  }
+};
+
 const FarmerDashboard = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingProduce, setEditingProduce] = useState(null);
@@ -115,40 +178,111 @@ const FarmerDashboard = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!validateForm()) return;
 
-    const newProduce = {
-      id: editingProduce ? editingProduce.id : Date.now().toString(),
-      ...formData,
-      quantity: parseFloat(formData.quantity),
-      pricePerUnit: parseFloat(formData.pricePerUnit),
-      status: 'available',
-      createdAt: editingProduce ? editingProduce.createdAt : new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    try {
+      // Prepare blockchain data - use individual fields as expected by BlockchainDataInput
+      const blockchainInput = {
+        type: 'harvest',
+        farmerId: 'FARMER_001', // In real app, get from user context
+        cropType: formData.cropName,
+        quantity: formData.quantity.toString(),
+        unit: formData.unit,
+        location: formData.location.address,
+        quality: 'Grade A', // Could be determined by AI/inspection
+        customData: JSON.stringify({
+          variety: formData.variety,
+          pricePerUnit: formData.pricePerUnit,
+          harvestDate: formData.harvestDate,
+          expiryDate: formData.expiryDate,
+          description: formData.description,
+          organicCertified: formData.organicCertified,
+          farmerName: 'Current Farmer',
+          farmLocation: formData.location.address
+        })
+      };
 
-    let updatedProduce;
-    if (editingProduce) {
-      updatedProduce = produceList.map(p => p.id === editingProduce.id ? newProduce : p);
-    } else {
-      updatedProduce = [...produceList, newProduce];
+      console.log('Submitting to blockchain:', blockchainInput);
+
+      // Submit to blockchain via GraphQL - send individual fields as BlockchainDataInput
+      const blockchainResult = await makeGraphQLRequest(CREATE_BLOCKCHAIN_DATA, {
+        input: blockchainInput
+      });
+
+      if (blockchainResult.createBlockchainData.success) {
+        const blockchainData = blockchainResult.createBlockchainData;
+        
+        // Create local produce entry with blockchain info
+        const newProduce = {
+          id: editingProduce ? editingProduce.id : Date.now().toString(),
+          ...formData,
+          quantity: parseFloat(formData.quantity),
+          pricePerUnit: parseFloat(formData.pricePerUnit),
+          status: 'available',
+          farmerName: 'Current Farmer',
+          farmLocation: formData.location.address,
+          quality: 'Grade A',
+          blockchainId: blockchainData.id,
+          blockchainTxId: blockchainData.blockchainTxId,
+          registeredOnBlockchain: true,
+          blockchainTimestamp: blockchainData.data.timestamp,
+          verified: blockchainData.data.verified,
+          createdAt: editingProduce ? editingProduce.createdAt : new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        let updatedProduce;
+        if (editingProduce) {
+          updatedProduce = produceList.map(p => p.id === editingProduce.id ? newProduce : p);
+        } else {
+          updatedProduce = [...produceList, newProduce];
+        }
+
+        setProduceList(updatedProduce);
+        localStorage.setItem('farmer_produce', JSON.stringify(updatedProduce));
+        
+        // Also store in marketplace for distributors
+        const existingMarketplace = JSON.parse(localStorage.getItem('marketplace_produce') || '[]');
+        const marketplaceItem = {
+          ...newProduce,
+          farmerId: 'FARMER_001',
+          isAvailableForDistributors: true
+        };
+        
+        if (editingProduce) {
+          const updatedMarketplace = existingMarketplace.map(p => 
+            p.id === editingProduce.id ? marketplaceItem : p
+          );
+          localStorage.setItem('marketplace_produce', JSON.stringify(updatedMarketplace));
+        } else {
+          localStorage.setItem('marketplace_produce', JSON.stringify([...existingMarketplace, marketplaceItem]));
+        }
+        
+        calculateStats(updatedProduce);
+
+        // Show success message with blockchain details
+        alert(`🎉 Product "${newProduce.cropName}" successfully registered on blockchain!\n\n🔗 Blockchain ID: ${blockchainData.id}\n📋 Transaction ID: ${blockchainData.blockchainTxId}\n⏰ Timestamp: ${blockchainData.data.timestamp}\n📍 Location: ${newProduce.farmLocation}\n✅ Now available for distributors to purchase`);
+
+        // Reset form
+        setFormData({
+          cropName: '', variety: '', quantity: '', unit: 'kg', pricePerUnit: '',
+          harvestDate: '', expiryDate: '', location: { address: '', coordinates: null },
+          description: '', organicCertified: false, imageUrl: ''
+        });
+        setShowAddForm(false);
+        setEditingProduce(null);
+
+      } else {
+        throw new Error(blockchainResult.createBlockchainData.message);
+      }
+
+    } catch (error) {
+      console.error('Blockchain registration failed:', error);
+      alert(`❌ Blockchain registration failed!\n\nError: ${error.message}\n\n💡 Please check:\n1. Backend server is running (http://localhost:4000)\n2. Blockchain network is active\n3. Network connectivity`);
     }
-
-    setProduceList(updatedProduce);
-    localStorage.setItem('farmer_produce', JSON.stringify(updatedProduce));
-    calculateStats(updatedProduce);
-
-    // Reset form
-    setFormData({
-      cropName: '', variety: '', quantity: '', unit: 'kg', pricePerUnit: '',
-      harvestDate: '', expiryDate: '', location: { address: '', coordinates: null },
-      description: '', organicCertified: false, imageUrl: ''
-    });
-    setShowAddForm(false);
-    setEditingProduce(null);
   };
 
   const handleEdit = (produce) => {
@@ -189,7 +323,7 @@ const FarmerDashboard = () => {
           icon={<Plus />}
           className="mt-4 sm:mt-0"
         >
-          Add Produce
+          Add to Blockchain
         </Button>
       </div>
 
@@ -394,7 +528,7 @@ const FarmerDashboard = () => {
                 Cancel
               </Button>
               <Button type="submit" variant="primary">
-                {editingProduce ? 'Update' : 'Add'} Produce
+                {editingProduce ? 'Update & Re-register on Blockchain' : 'Register on Blockchain'}
               </Button>
             </div>
           </form>

@@ -1,0 +1,59 @@
+version: "3.8"
+
+networks:
+  agrichain:
+
+services:
+  # Orderer service
+  orderer-demo:
+    image: hyperledger/fabric-orderer:latest
+    container_name: orderer-demo
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LISTENPORT=7050
+      - ORDERER_GENERAL_BOOTSTRAPMETHOD=none
+      - ORDERER_GENERAL_LOCALMSPID=DemoOrdererMSP
+    ports:
+      - "7050:7050"
+    networks:
+      - agrichain
+    command: echo "Orderer is ready for demonstration"
+
+  # Peer for organization 1
+  peer0-org1-demo:
+    image: hyperledger/fabric-peer:latest
+    container_name: peer0-org1-demo
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer0.org1.demo.com
+      - CORE_PEER_ADDRESS=peer0.org1.demo.com:7051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.org1.demo.com:7052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
+      - CORE_PEER_LOCALMSPID=DemoOrg1MSP
+    ports:
+      - "7051:7051"
+      - "7052:7052"
+    networks:
+      - agrichain
+    command: echo "Peer0 Org1 is ready for demonstration"
+
+  # Peer for organization 2
+  peer0-org2-demo:
+    image: hyperledger/fabric-peer:latest
+    container_name: peer0-org2-demo
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer0.org2.demo.com
+      - CORE_PEER_ADDRESS=peer0.org2.demo.com:9051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:9051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.org2.demo.com:9052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:9052
+      - CORE_PEER_LOCALMSPID=DemoOrg2MSP
+    ports:
+      - "9051:9051"
+      - "9052:9052"
+    networks:
+      - agrichain
+    command: echo "Peer0 Org2 is ready for demonstration"
